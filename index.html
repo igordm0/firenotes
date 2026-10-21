@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notatnik</title>
+<!--
+  KONFIGURACJA (jednorazowo):
+  1. Wpisz adres swojej bazy Firebase Realtime Database w DB_URL poniżej.
+  2. W Firebase (Realtime Database -> Reguły) wklej i opublikuj:
+
+     {
+       "rules": {
+         "notes": {
+           "$id": {
+             ".read": true,
+             ".write": true,
+             ".validate": "newData.isString() && newData.val().length < 500000"
+           }
+         }
+       }
+     }
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #d6d3d1;
+    --accent: #2563eb; --accent-fg: #fff; --card: #ffffff; --danger: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513; --fg: #f5f5f4; --muted: #a8a29e; --line: #3a3835;
+      --accent: #3b82f6; --accent-fg: #fff; --card: #1f1d1b; --danger: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+  .hidden { display: none !important; }
+
+  /* ekran hasła */
+  #login { min-height: 100%; display: grid; place-items: center; padding: 16px; }
+  #form { width: 100%; max-width: 340px; display: grid; gap: 12px; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 600; }
+  input, button, textarea { font: inherit; color: inherit; }
+  input[type=password] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--card);
+  }
+  input[type=password]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); padding: 10px 14px; }
+  button:disabled { opacity: .6; cursor: default; }
+  .hint { margin: 0; font-size: .875rem; color: var(--muted); }
+  #err { margin: 0; font-size: .875rem; color: var(--danger); min-height: 1.3em; }
+
+  /* ekran notatnika */
+  #pad { height: 100%; display: flex; flex-direction: column; }
+  #bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  #status { flex: 1; font-size: .875rem; color: var(--muted); }
+  #text {
+    flex: 1; width: 100%; resize: none; border: 0; padding: 16px;
+    background: var(--bg); line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form id="form">
+    <h1>Notatnik</h1>
+    <input id="pw" type="password" placeholder="Hasło" autocomplete="current-password" required autofocus>
+    <button class="primary" id="go" type="submit">Otwórz</button>
+    <p id="err"></p>
+    <p class="hint">Każde hasło to osobny notatnik. Nowe hasło otwiera nowy, pusty notatnik. Użyj długiego hasła.</p>
+  </form>
+</div>
+
+<div id="pad" class="hidden">
+  <div id="bar">
+    <span id="status">Łączę…</span>
+    <button id="copy" type="button">Kopiuj</button>
+    <button id="logout" type="button">Wyloguj</button>
+  </div>
+  <textarea id="text" maxlength="100000" placeholder="Pisz albo wklej tutaj…" disabled></textarea>
+</div>
+
+<script>
+// ====== USTAWIENIA ======
+const DB_URL = "https://firenotes-a66fd-default-rtdb.europe-west1.firebasedatabase.app";
+// ========================
+
+const SALT = "notatnik-v1";
+const ITER = 200000;
+
+// --- crypto ---
+const enc = new TextEncoder(), dec = new TextDecoder();
+let key = null;
+
+function b64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  return btoa(s);
+}
+function unb64(str) {
+  const s = atob(str), out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+// Z hasła powstaje: klucz szyfrujący (pierwsze 32 bajty) i identyfikator notatnika (kolejne 32 bajty).
+// Samo hasło nigdy nie opuszcza przeglądarki.
+async function derive(password) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: enc.encode(SALT), iterations: ITER, hash: "SHA-256" }, base, 512));
+  const aesKey = await crypto.subtle.importKey("raw", bits.slice(0, 32), "AES-GCM", false, ["encrypt", "decrypt"]);
+  const id = Array.from(bits.slice(32), b => b.toString(16).padStart(2, "0")).join("");
+  return { aesKey, id };
+}
+async function encrypt(str) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(str)));
+  const all = new Uint8Array(12 + ct.length);
+  all.set(iv); all.set(ct, 12);
+  return b64(all);
+}
+async function decrypt(str) {
+  const all = unb64(str);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) }, key, all.slice(12));
+  return dec.decode(pt);
+}
+// --- end crypto ---
+
+const $ = id => document.getElementById(id);
+const loginEl = $("login"), padEl = $("pad"), form = $("form"), pw = $("pw"),
+      go = $("go"), err = $("err"), text = $("text"), statusEl = $("status");
+
+let url = null, es = null, timer = null, retry = null;
+let dirty = false, saving = false, lastCipher = null;
+
+const setStatus = s => { statusEl.textContent = s; };
+
+async function openPad(password) {
+  err.textContent = "";
+  if (!DB_URL || DB_URL.includes("TWOJ-PROJEKT")) {
+    err.textContent = "Brak konfiguracji: ustaw DB_URL w pliku index.html.";
+    return false;
+  }
+  go.disabled = true;
+  try {
+    const { aesKey, id } = await derive(password);
+    key = aesKey;
+    url = DB_URL.replace(/\/+$/, "") + "/notes/" + id + ".json";
+  } catch (e) {
+    err.textContent = "Nie udało się przetworzyć hasła.";
+    go.disabled = false;
+    return false;
+  }
+  go.disabled = false;
+  try { sessionStorage.setItem("np", password); } catch (e) {}
+  loginEl.classList.add("hidden");
+  padEl.classList.remove("hidden");
+  text.value = "";
+  text.disabled = true;
+  setStatus("Łączę…");
+  connect();
+  return true;
+}
+
+function connect() {
+  es = new EventSource(url);
+  es.addEventListener("open", () => setStatus("Połączono"));
+  es.addEventListener("put", onData);
+  es.onerror = () => setStatus("Brak połączenia – ponawiam…");
+}
+
+async function onData(e) {
+  let msg;
+  try { msg = JSON.parse(e.data); } catch (_) { return; }
+  if (!msg || msg.path !== "/") return;
+
+  if (text.disabled) { text.disabled = false; text.focus(); }   // pierwsze dane = gotowe do pisania
+  const cipher = msg.data;
+  if (typeof cipher !== "string") { setStatus("Połączono"); return; }  // nowy, pusty notatnik
+  if (cipher === lastCipher) return;                                   // to nasz własny zapis
+  if (dirty || saving) return;                                         // nie nadpisuj tego, co właśnie piszesz
+
+  try {
+    const t = await decrypt(cipher);
+    lastCipher = cipher;
+    if (t !== text.value) {
+      const s = text.selectionStart, en = text.selectionEnd, top = text.scrollTop;
+      text.value = t;
+      try { text.setSelectionRange(Math.min(s, t.length), Math.min(en, t.length)); } catch (_) {}
+      text.scrollTop = top;
+    }
+    setStatus("Zsynchronizowano");
+  } catch (_) {
+    setStatus("Nie udało się odczytać notatki");
+  }
+}
+
+text.addEventListener("input", () => {
+  dirty = true;
+  setStatus("Zapisuję…");
+  clearTimeout(timer);
+  timer = setTimeout(save, 400);
+});
+
+async function save() {
+  if (saving || !url) return;
+  saving = true;
+  try {
+    while (dirty) {
+      dirty = false;
+      const cipher = await encrypt(text.value);
+      const r = await fetch(url, { method: "PUT", body: JSON.stringify(cipher) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      lastCipher = cipher;
+    }
+    setStatus("Zapisano ✓");
+  } catch (e) {
+    dirty = true;
+    setStatus("Błąd zapisu – ponawiam…");
+    clearTimeout(retry);
+    retry = setTimeout(save, 3000);
+  } finally {
+    saving = false;
+  }
+}
+
+function logout() {
+  if (es) es.close();
+  clearTimeout(timer); clearTimeout(retry);
+  es = null; key = null; url = null; dirty = false; saving = false; lastCipher = null;
+  try { sessionStorage.removeItem("np"); } catch (e) {}
+  text.value = ""; pw.value = "";
+  padEl.classList.add("hidden");
+  loginEl.classList.remove("hidden");
+  pw.focus();
+}
+
+form.addEventListener("submit", e => { e.preventDefault(); openPad(pw.value); });
+$("logout").addEventListener("click", logout);
+$("copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(text.value); setStatus("Skopiowano do schowka"); }
+  catch (_) { text.select(); setStatus("Zaznaczono – naciśnij Ctrl+C"); }
+});
+
+// po odświeżeniu strony hasło jest pamiętane do zamknięcia karty
+try {
+  const saved = sessionStorage.getItem("np");
+  if (saved) openPad(saved);
+} catch (e) {}
+</script>
+</body>
+</html>
