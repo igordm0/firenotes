@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asystent maili</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #d6d3d1;
+    --accent: #2563eb; --accent-fg: #fff; --card: #ffffff; --danger: #dc2626;
+    --user: #eef2ff; --ai: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513; --fg: #f5f5f4; --muted: #a8a29e; --line: #3a3835;
+      --accent: #3b82f6; --accent-fg: #fff; --card: #1f1d1b; --danger: #f87171;
+      --user: #1e2a4a; --ai: #1f1d1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+  .hidden { display: none !important; }
+  input, button, textarea { font: inherit; color: inherit; }
+  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button:disabled { opacity: .6; cursor: default; }
+  input[type=password], textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--card);
+  }
+  input[type=password]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  /* ekran hasła */
+  #login { min-height: 100%; display: grid; place-items: center; padding: 16px; }
+  #form { width: 100%; max-width: 340px; display: grid; gap: 12px; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 600; }
+  .hint { margin: 0; font-size: .875rem; color: var(--muted); }
+  #err { margin: 0; font-size: .875rem; color: var(--danger); min-height: 1.3em; }
+
+  /* czat */
+  #app { height: 100%; display: flex; flex-direction: column; }
+  #bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  #status { flex: 1; font-size: .875rem; color: var(--muted); }
+  #status.error { color: var(--danger); }
+  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .empty { margin: auto; max-width: 420px; text-align: center; color: var(--muted); font-size: .95rem; }
+  .msg { max-width: 760px; width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .msg.user { background: var(--user); align-self: flex-end; }
+  .msg.assistant { background: var(--ai); align-self: flex-start; }
+  .msg .who { font-size: .75rem; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .msg .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg .copy { margin-top: 10px; padding: 5px 12px; font-size: .875rem; }
+  #composer { display: grid; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  #input { resize: vertical; min-height: 96px; max-height: 40vh; }
+  #row { display: flex; align-items: center; gap: 12px; }
+  #row .hint { flex: 1; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form id="form">
+    <h1>Asystent maili</h1>
+    <input id="pw" type="password" placeholder="Hasło" autocomplete="current-password" required autofocus>
+    <button class="primary" id="go" type="submit">Wejdź</button>
+    <p id="err"></p>
+    <p class="hint">Wklejasz maila od klienta, a asystent pisze gotową odpowiedź do skopiowania. Rozmowy nie są nigdzie zapisywane.</p>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <div id="bar">
+    <span id="status">Wklej maila od klienta</span>
+    <button id="new" type="button">Nowa rozmowa</button>
+    <button id="logout" type="button">Wyloguj</button>
+  </div>
+  <div id="chat"></div>
+  <form id="composer">
+    <textarea id="input" maxlength="15000" placeholder="Wklej tutaj wiadomość od klienta. Pod nią możesz dopisać linijkę zaczynającą się od NOTATKA: (np. NOTATKA: numer zamówienia, Twoja decyzja)."></textarea>
+    <div id="row">
+      <p class="hint">Ctrl+Enter – wyślij. Po odpowiedzi możesz dopisać poprawki, np. „krócej”.</p>
+      <button class="primary" id="send" type="submit">Wyślij</button>
+    </div>
+  </form>
+</div>
+
+<script>
+// ====== USTAWIENIA ======
+const WORKER_URL = "https://maile-ai.vel1o2115-109.workers.dev";
+// ========================
+
+const $ = id => document.getElementById(id);
+const loginEl = $("login"), appEl = $("app"), form = $("form"), pw = $("pw"), go = $("go"),
+      err = $("err"), chat = $("chat"), input = $("input"), sendBtn = $("send"),
+      composer = $("composer"), statusEl = $("status");
+
+let password = null;
+let messages = [];     // rozmowa trzymana tylko w pamięci karty
+let busy = false;
+
+const setStatus = (s, isError) => { statusEl.textContent = s; statusEl.classList.toggle("error", !!isError); };
+const configured = () => WORKER_URL && !WORKER_URL.includes("TWOJ-WORKER");
+
+async function callWorker(payload, pass) {
+  const r = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Access-Password": pass },
+    body: JSON.stringify(payload),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, ok: r.ok, data };
+}
+
+async function login(pass) {
+  err.textContent = "";
+  if (!configured()) { err.textContent = "Brak konfiguracji: ustaw WORKER_URL w pliku maile.html."; return false; }
+  go.disabled = true;
+  try {
+    const res = await callWorker({ ping: true }, pass);
+    if (res.status === 401) { err.textContent = "Nieprawidłowe hasło."; return false; }
+    if (!res.ok) { err.textContent = res.data.error || ("Błąd " + res.status); return false; }
+  } catch (e) {
+    err.textContent = "Nie udało się połączyć z pośrednikiem. Sprawdź WORKER_URL i połączenie z internetem.";
+    return false;
+  } finally { go.disabled = false; }
+
+  password = pass;
+  try { sessionStorage.setItem("mp", pass); } catch (e) {}
+  loginEl.classList.add("hidden");
+  appEl.classList.remove("hidden");
+  resetChat();
+  input.focus();
+  return true;
+}
+
+function resetChat() {
+  messages = [];
+  chat.innerHTML = "";
+  const e = document.createElement("div");
+  e.className = "empty";
+  e.textContent = "Wklej poniżej wiadomość od klienta. Pod nią możesz dopisać linijkę „NOTATKA: …” z decyzją lub danymi zamówienia. Asystent przygotuje odpowiedź, którą skopiujesz.";
+  chat.appendChild(e);
+  setStatus("Wklej maila od klienta");
+}
+
+function addBubble(role, text) {
+  const empty = chat.querySelector(".empty");
+  if (empty) empty.remove();
+
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = role === "user" ? "Ty" : "Odpowiedź";
+  const t = document.createElement("div");
+  t.className = "txt";
+  t.textContent = text;
+  d.append(who, t);
+
+  if (role === "assistant") {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "copy"; b.textContent = "Kopiuj";
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(text); b.textContent = "Skopiowano ✓"; }
+      catch (e) {
+        const sel = getSelection(), range = document.createRange();
+        range.selectNodeContents(t); sel.removeAllRanges(); sel.addRange(range);
+        b.textContent = "Zaznaczono – Ctrl+C";
+      }
+      setTimeout(() => { b.textContent = "Kopiuj"; }, 2000);
+    });
+    d.appendChild(b);
+  }
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+
+async function send() {
+  const text = input.value.trim();
+  if (!text || busy) return;
+  busy = true; sendBtn.disabled = true;
+  messages.push({ role: "user", content: text });
+  const bubble = addBubble("user", text);
+  input.value = "";
+  setStatus("Asystent pisze odpowiedź…");
+
+  try {
+    const res = await callWorker({ messages }, password);
+    if (res.status === 401) { throw new Error("Hasło przestało być ważne – zaloguj się ponownie."); }
+    if (!res.ok || !res.data.reply) { throw new Error(res.data.error || ("Błąd " + res.status)); }
+    messages.push({ role: "assistant", content: res.data.reply });
+    addBubble("assistant", res.data.reply);
+    setStatus("Gotowe – skopiuj odpowiedź albo dopisz poprawki");
+  } catch (e) {
+    messages.pop();            // cofnij wiadomość, żeby można było spróbować jeszcze raz
+    bubble.remove();
+    input.value = text;
+    setStatus((e && e.message) || "Nie udało się pobrać odpowiedzi.", true);
+  } finally {
+    busy = false; sendBtn.disabled = false; input.focus();
+  }
+}
+
+function logout() {
+  password = null; messages = [];
+  try { sessionStorage.removeItem("mp"); } catch (e) {}
+  chat.innerHTML = ""; input.value = ""; pw.value = ""; err.textContent = "";
+  appEl.classList.add("hidden");
+  loginEl.classList.remove("hidden");
+  pw.focus();
+}
+
+form.addEventListener("submit", e => { e.preventDefault(); login(pw.value); });
+composer.addEventListener("submit", e => { e.preventDefault(); send(); });
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+});
+$("new").addEventListener("click", () => { if (!busy) { resetChat(); input.value = ""; input.focus(); } });
+$("logout").addEventListener("click", logout);
+
+// po odświeżeniu strony hasło jest pamiętane do zamknięcia karty
+try {
+  const saved = sessionStorage.getItem("mp");
+  if (saved) login(saved);
+} catch (e) {}
+</script>
+</body>
+</html>
