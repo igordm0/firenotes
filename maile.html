@@ -7,103 +7,172 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #d6d3d1;
+    --bg: #f6f5f3; --fg: #1c1917; --muted: #78716c; --line: #d6d3d1;
     --accent: #2563eb; --accent-fg: #fff; --card: #ffffff; --danger: #dc2626;
-    --user: #eef2ff; --ai: #ffffff;
+    --reply: #f0f7ff; --reply-line: #bfdbfe;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #161513; --fg: #f5f5f4; --muted: #a8a29e; --line: #3a3835;
-      --accent: #3b82f6; --accent-fg: #fff; --card: #1f1d1b; --danger: #f87171;
-      --user: #1e2a4a; --ai: #1f1d1b;
+      --bg: #141311; --fg: #f5f5f4; --muted: #a8a29e; --line: #3a3835;
+      --accent: #3b82f6; --accent-fg: #fff; --card: #1e1c1a; --danger: #f87171;
+      --reply: #172033; --reply-line: #25395f;
     }
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { min-height: 100%; margin: 0; }
   body { font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
   .hidden { display: none !important; }
-  input, button, textarea { font: inherit; color: inherit; }
+  input, button, textarea, select { font: inherit; color: inherit; }
   button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
   button:hover { border-color: var(--muted); }
-  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); padding: 10px 18px; font-weight: 600; }
   button:disabled { opacity: .6; cursor: default; }
-  input[type=password], textarea {
+  input[type=password], input[type=text], select, textarea {
     width: 100%; padding: 10px 12px; border: 1px solid var(--line);
     border-radius: 8px; background: var(--card);
   }
-  input[type=password]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { resize: vertical; }
 
   /* ekran hasła */
-  #login { min-height: 100%; display: grid; place-items: center; padding: 16px; }
-  #form { width: 100%; max-width: 340px; display: grid; gap: 12px; }
+  #login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  #loginForm { width: 100%; max-width: 340px; display: grid; gap: 12px; }
   h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 600; }
   .hint { margin: 0; font-size: .875rem; color: var(--muted); }
   #err { margin: 0; font-size: .875rem; color: var(--danger); min-height: 1.3em; }
 
-  /* czat */
-  #app { height: 100%; display: flex; flex-direction: column; }
-  #bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  #status { flex: 1; font-size: .875rem; color: var(--muted); }
+  /* aplikacja */
+  #bar {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line);
+  }
+  #bar .title { font-weight: 600; }
+  #cost { flex: 1; text-align: right; font-size: .8125rem; color: var(--muted); }
+  #main { max-width: 820px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  #mainForm { display: grid; gap: 14px; }
+  label { display: grid; gap: 6px; font-size: .875rem; font-weight: 600; }
+  label .opt { font-weight: 400; color: var(--muted); }
+  input, textarea, select { font-weight: 400; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
+  .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #status { font-size: .875rem; color: var(--muted); }
   #status.error { color: var(--danger); }
-  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-  .empty { margin: auto; max-width: 420px; text-align: center; color: var(--muted); font-size: .95rem; }
-  .msg { max-width: 760px; width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .msg.user { background: var(--user); align-self: flex-end; }
-  .msg.assistant { background: var(--ai); align-self: flex-start; }
-  .msg .who { font-size: .75rem; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
-  .msg .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg .copy { margin-top: 10px; padding: 5px 12px; font-size: .875rem; }
-  #composer { display: grid; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
-  #input { resize: vertical; min-height: 96px; max-height: 40vh; }
-  #row { display: flex; align-items: center; gap: 12px; }
-  #row .hint { flex: 1; }
+
+  #results { display: grid; gap: 12px; }
+  .reply { background: var(--reply); border-color: var(--reply-line); }
+  .reply .head { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 6px; }
+  .reply .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .reply .foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .reply .meta { font-size: .75rem; color: var(--muted); }
+  .note { font-size: .875rem; color: var(--muted); padding: 0 4px; }
+
+  #tweakBox { display: grid; gap: 10px; }
+  #tweakBox .lbl { font-size: .875rem; font-weight: 600; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chips button { padding: 5px 14px; border-radius: 999px; font-size: .875rem; }
+  #tweakForm { display: flex; gap: 8px; }
+  #tweakForm input { flex: 1; }
 </style>
 </head>
 <body>
 
 <div id="login">
-  <form id="form">
+  <form id="loginForm">
     <h1>Asystent maili</h1>
     <input id="pw" type="password" placeholder="Hasło" autocomplete="current-password" required autofocus>
     <button class="primary" id="go" type="submit">Wejdź</button>
     <p id="err"></p>
-    <p class="hint">Wklejasz maila od klienta, a asystent pisze gotową odpowiedź do skopiowania. Rozmowy nie są nigdzie zapisywane.</p>
+    <p class="hint">Wklejasz wiadomość od klienta, a asystent pisze gotową odpowiedź do skopiowania. Rozmowy nie są nigdzie zapisywane.</p>
   </form>
 </div>
 
 <div id="app" class="hidden">
   <div id="bar">
-    <span id="status">Wklej maila od klienta</span>
-    <button id="new" type="button">Nowa rozmowa</button>
+    <span class="title">Asystent maili</span>
+    <span id="cost"></span>
     <button id="logout" type="button">Wyloguj</button>
   </div>
-  <div id="chat"></div>
-  <form id="composer">
-    <textarea id="input" maxlength="15000" placeholder="Wklej tutaj wiadomość od klienta. Pod nią możesz dopisać linijkę zaczynającą się od NOTATKA: (np. NOTATKA: numer zamówienia, Twoja decyzja)."></textarea>
-    <div id="row">
-      <p class="hint">Ctrl+Enter – wyślij. Po odpowiedzi możesz dopisać poprawki, np. „krócej”.</p>
-      <button class="primary" id="send" type="submit">Wyślij</button>
+
+  <main id="main">
+    <form id="mainForm" class="card" autocomplete="off">
+      <div class="row2">
+        <label><span>Kto podpisuje wiadomość</span>
+          <select id="signer"></select>
+        </label>
+        <label><span>Imię klienta <span class="opt">(opcjonalnie)</span></span>
+          <input id="clientName" type="text" maxlength="60" placeholder="np. Piotr lub Lucyna" autocomplete="off">
+        </label>
+      </div>
+      <label><span>Wiadomość od klienta</span>
+        <textarea id="mail" rows="8" maxlength="15000" placeholder="Wklej tutaj całą wiadomość od klienta…"></textarea>
+      </label>
+      <label><span>Notatka <span class="opt">(opcjonalnie)</span></span>
+        <textarea id="note" rows="3" maxlength="3000" placeholder="Podpowiedź, co ma być w odpowiedzi, np. numer zamówienia, Twoja decyzja…"></textarea>
+      </label>
+      <div class="actions">
+        <button class="primary" id="gen" type="submit">Napisz odpowiedź</button>
+        <button id="clear" type="button">Wyczyść</button>
+        <span id="status"></span>
+      </div>
+    </form>
+
+    <section id="results"></section>
+
+    <div id="tweakBox" class="card hidden">
+      <span class="lbl">Popraw odpowiedź</span>
+      <div class="chips">
+        <button type="button" data-t="Zrób to krócej.">Krócej</button>
+        <button type="button" data-t="Zrób to cieplejszym tonem.">Cieplej</button>
+        <button type="button" data-t="Zrób to bardziej stanowczym tonem.">Bardziej stanowczo</button>
+      </div>
+      <form id="tweakForm" autocomplete="off">
+        <input id="tweakInput" type="text" maxlength="1000" placeholder="Albo wpisz własną poprawkę, np. dodaj prośbę o zdjęcie…">
+        <button id="tweakBtn" type="submit">Popraw</button>
+      </form>
     </div>
-  </form>
+  </main>
 </div>
 
 <script>
 // ====== USTAWIENIA ======
 const WORKER_URL = "https://maile-ai.vel1o2115-109.workers.dev";
+const SIGNERS = ["Jakub", "Julia", "Igor"];   // osoby do wyboru w polu „Kto podpisuje”
+const USD_TO_PLN = 4.0;                       // przybliżony kurs, do pokazywania kosztu w groszach
 // ========================
 
 const $ = id => document.getElementById(id);
-const loginEl = $("login"), appEl = $("app"), form = $("form"), pw = $("pw"), go = $("go"),
-      err = $("err"), chat = $("chat"), input = $("input"), sendBtn = $("send"),
-      composer = $("composer"), statusEl = $("status");
+const loginEl = $("login"), appEl = $("app"), loginForm = $("loginForm"), pw = $("pw"), go = $("go"),
+      err = $("err"), mainForm = $("mainForm"), signer = $("signer"), clientName = $("clientName"),
+      mail = $("mail"), note = $("note"), gen = $("gen"), statusEl = $("status"), results = $("results"),
+      tweakBox = $("tweakBox"), tweakForm = $("tweakForm"), tweakInput = $("tweakInput"),
+      tweakBtn = $("tweakBtn"), costEl = $("cost");
 
 let password = null;
-let messages = [];     // rozmowa trzymana tylko w pamięci karty
+let messages = [];       // rozmowa trzymana tylko w pamięci karty
 let busy = false;
+let version = 0;
+let sessionUsd = 0;
 
-const setStatus = (s, isError) => { statusEl.textContent = s; statusEl.classList.toggle("error", !!isError); };
 const configured = () => WORKER_URL && !WORKER_URL.includes("TWOJ-WORKER");
+const setStatus = (s, isError) => { statusEl.textContent = s; statusEl.classList.toggle("error", !!isError); };
 
+// ---- koszt ----
+const fmtUsd = usd => "$" + usd.toFixed(4);
+function fmtGr(usd) {
+  const gr = usd * USD_TO_PLN * 100;
+  if (gr >= 100) return (gr / 100).toFixed(2).replace(".", ",") + " zł";
+  if (gr < 0.1) return "<0,1 gr";
+  return gr.toFixed(1).replace(".", ",") + " gr";
+}
+function updateCost() {
+  costEl.textContent = sessionUsd > 0
+    ? "Koszt w tej sesji: ≈ " + fmtUsd(sessionUsd) + " (" + fmtGr(sessionUsd) + ")"
+    : "";
+}
+
+// ---- komunikacja z pośrednikiem ----
 async function callWorker(payload, pass) {
   const r = await fetch(WORKER_URL, {
     method: "POST",
@@ -114,6 +183,23 @@ async function callWorker(payload, pass) {
   return { status: r.status, ok: r.ok, data };
 }
 
+// ---- podpis (zapamiętywany w tej przeglądarce) ----
+function initSigners() {
+  signer.innerHTML = "";
+  for (const s of SIGNERS) {
+    const o = document.createElement("option");
+    o.value = o.textContent = s;
+    signer.appendChild(o);
+  }
+  let saved = null;
+  try { saved = localStorage.getItem("mail_signer"); } catch (e) {}
+  if (saved && SIGNERS.includes(saved)) signer.value = saved;
+}
+signer.addEventListener("change", () => {
+  try { localStorage.setItem("mail_signer", signer.value); } catch (e) {}
+});
+
+// ---- logowanie ----
 async function login(pass) {
   err.textContent = "";
   if (!configured()) { err.textContent = "Brak konfiguracji: ustaw WORKER_URL w pliku maile.html."; return false; }
@@ -131,95 +217,146 @@ async function login(pass) {
   try { sessionStorage.setItem("mp", pass); } catch (e) {}
   loginEl.classList.add("hidden");
   appEl.classList.remove("hidden");
-  resetChat();
-  input.focus();
+  initSigners();
+  resetAll();
+  mail.focus();
   return true;
 }
 
-function resetChat() {
-  messages = [];
-  chat.innerHTML = "";
-  const e = document.createElement("div");
-  e.className = "empty";
-  e.textContent = "Wklej poniżej wiadomość od klienta. Pod nią możesz dopisać linijkę „NOTATKA: …” z decyzją lub danymi zamówienia. Asystent przygotuje odpowiedź, którą skopiujesz.";
-  chat.appendChild(e);
-  setStatus("Wklej maila od klienta");
+function resetAll() {
+  messages = []; version = 0;
+  results.innerHTML = "";
+  tweakBox.classList.add("hidden");
+  clientName.value = ""; mail.value = ""; note.value = ""; tweakInput.value = "";
+  setStatus("");
 }
 
-function addBubble(role, text) {
-  const empty = chat.querySelector(".empty");
-  if (empty) empty.remove();
+// ---- składanie wiadomości do AI ----
+// Usuwa z tekstu użytkownika znaczniki, którymi oznaczamy pola, żeby nie dało się ich podrobić.
+const clean = t => t.replace(/<\/?\s*(wiadomosc_klienta|notatka|podpis|imie_klienta)\s*>/gi, "");
 
-  const d = document.createElement("div");
-  d.className = "msg " + role;
-  const who = document.createElement("div");
-  who.className = "who";
-  who.textContent = role === "user" ? "Ty" : "Odpowiedź";
-  const t = document.createElement("div");
-  t.className = "txt";
-  t.textContent = text;
-  d.append(who, t);
+function buildMessage() {
+  const name = clean(clientName.value).replace(/[<>]/g, "").trim();
+  const mailText = clean(mail.value).trim();
+  const noteText = clean(note.value).trim();
+  let s = "<podpis>" + signer.value + "</podpis>\n";
+  if (name) s += "<imie_klienta>" + name + "</imie_klienta>\n";
+  s += "<wiadomosc_klienta>\n" + mailText + "\n</wiadomosc_klienta>";
+  if (noteText) s += "\n<notatka>\n" + noteText + "\n</notatka>";
+  return s;
+}
 
-  if (role === "assistant") {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "copy"; b.textContent = "Kopiuj";
-    b.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(text); b.textContent = "Skopiowano ✓"; }
-      catch (e) {
-        const sel = getSelection(), range = document.createRange();
-        range.selectNodeContents(t); sel.removeAllRanges(); sel.addRange(range);
-        b.textContent = "Zaznaczono – Ctrl+C";
-      }
-      setTimeout(() => { b.textContent = "Kopiuj"; }, 2000);
-    });
-    d.appendChild(b);
+// ---- wyświetlanie ----
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function addNote(text) {
+  const n = el("div", "note", text);
+  results.appendChild(n);
+  return n;
+}
+
+function addReply(text, usage) {
+  version++;
+  const d = el("div", "reply card");
+  d.appendChild(el("div", "head", version > 1 ? "Odpowiedź – wersja " + version : "Odpowiedź"));
+  const t = el("div", "txt", text);
+  d.appendChild(t);
+
+  const foot = el("div", "foot");
+  const b = el("button", null, "Kopiuj");
+  b.type = "button";
+  b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent = "Skopiowano ✓"; }
+    catch (e) {
+      const sel = getSelection(), range = document.createRange();
+      range.selectNodeContents(t); sel.removeAllRanges(); sel.addRange(range);
+      b.textContent = "Zaznaczono – Ctrl+C";
+    }
+    setTimeout(() => { b.textContent = "Kopiuj"; }, 2000);
+  });
+  foot.appendChild(b);
+
+  if (usage && typeof usage.cost_usd === "number") {
+    sessionUsd += usage.cost_usd;
+    updateCost();
+    foot.appendChild(el("span", "meta",
+      usage.input_tokens + " tok. wejścia + " + usage.output_tokens + " tok. wyjścia · ≈ " +
+      fmtUsd(usage.cost_usd) + " (" + fmtGr(usage.cost_usd) + ")"));
   }
-  chat.appendChild(d);
-  chat.scrollTop = chat.scrollHeight;
-  return d;
+  d.appendChild(foot);
+  results.appendChild(d);
+  d.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-async function send() {
-  const text = input.value.trim();
-  if (!text || busy) return;
-  busy = true; sendBtn.disabled = true;
-  messages.push({ role: "user", content: text });
-  const bubble = addBubble("user", text);
-  input.value = "";
-  setStatus("Asystent pisze odpowiedź…");
+function setBusy(on) {
+  busy = on;
+  gen.disabled = on; tweakBtn.disabled = on;
+  document.querySelectorAll(".chips button").forEach(b => { b.disabled = on; });
+}
 
+// ---- wysyłanie ----
+async function runRequest(onFail) {
+  setBusy(true);
+  setStatus("Asystent pisze odpowiedź…");
   try {
     const res = await callWorker({ messages }, password);
-    if (res.status === 401) { throw new Error("Hasło przestało być ważne – zaloguj się ponownie."); }
-    if (!res.ok || !res.data.reply) { throw new Error(res.data.error || ("Błąd " + res.status)); }
+    if (res.status === 401) throw new Error("Hasło przestało być ważne – zaloguj się ponownie.");
+    if (!res.ok || !res.data.reply) throw new Error(res.data.error || ("Błąd " + res.status));
     messages.push({ role: "assistant", content: res.data.reply });
-    addBubble("assistant", res.data.reply);
-    setStatus("Gotowe – skopiuj odpowiedź albo dopisz poprawki");
+    addReply(res.data.reply, res.data.usage);
+    tweakBox.classList.remove("hidden");
+    setStatus("Gotowe – skopiuj odpowiedź albo ją popraw");
+    return true;
   } catch (e) {
-    messages.pop();            // cofnij wiadomość, żeby można było spróbować jeszcze raz
-    bubble.remove();
-    input.value = text;
+    onFail();
     setStatus((e && e.message) || "Nie udało się pobrać odpowiedzi.", true);
+    return false;
   } finally {
-    busy = false; sendBtn.disabled = false; input.focus();
+    setBusy(false);
   }
+}
+
+async function generate() {
+  if (busy) return;
+  if (!mail.value.trim()) { setStatus("Wklej najpierw wiadomość od klienta.", true); mail.focus(); return; }
+  messages = [{ role: "user", content: buildMessage() }];
+  results.innerHTML = ""; version = 0;
+  tweakBox.classList.add("hidden");
+  await runRequest(() => { messages = []; });
+}
+
+async function tweak(text) {
+  const t = (text || "").trim();
+  if (busy || !t || messages.length === 0) return;
+  messages.push({ role: "user", content: "POPRAWKA: " + clean(t) });
+  const bubble = addNote("Poprawka: " + t);
+  const ok = await runRequest(() => { messages.pop(); bubble.remove(); });
+  if (ok) tweakInput.value = "";
 }
 
 function logout() {
-  password = null; messages = [];
+  password = null; sessionUsd = 0; updateCost();
   try { sessionStorage.removeItem("mp"); } catch (e) {}
-  chat.innerHTML = ""; input.value = ""; pw.value = ""; err.textContent = "";
+  resetAll();
+  pw.value = ""; err.textContent = "";
   appEl.classList.add("hidden");
   loginEl.classList.remove("hidden");
   pw.focus();
 }
 
-form.addEventListener("submit", e => { e.preventDefault(); login(pw.value); });
-composer.addEventListener("submit", e => { e.preventDefault(); send(); });
-input.addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
-});
-$("new").addEventListener("click", () => { if (!busy) { resetChat(); input.value = ""; input.focus(); } });
+loginForm.addEventListener("submit", e => { e.preventDefault(); login(pw.value); });
+mainForm.addEventListener("submit", e => { e.preventDefault(); generate(); });
+tweakForm.addEventListener("submit", e => { e.preventDefault(); tweak(tweakInput.value); });
+document.querySelectorAll(".chips button").forEach(b => b.addEventListener("click", () => tweak(b.dataset.t)));
+[mail, note].forEach(f => f.addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); mainForm.requestSubmit(); }
+}));
+$("clear").addEventListener("click", () => { if (!busy) { resetAll(); mail.focus(); } });
 $("logout").addEventListener("click", logout);
 
 // po odświeżeniu strony hasło jest pamiętane do zamknięcia karty
